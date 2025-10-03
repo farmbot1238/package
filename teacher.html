@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>واجهة المعلم</title>
+<style>body{font-family:tahoma;max-width:900px;margin:12px auto;padding:8px}label{display:block;margin-top:8px}</style>
+</head>
+<body>
+<h2>دخول المعلم</h2>
+<div id="login">
+  <label>كود المعلم <input id="code"></label>
+  <button onclick="login()">دخول</button>
+  <div id="loginMsg"></div>
+</div>
+
+<div id="panel" style="display:none">
+  <h3 id="greet"></h3>
+  <button onclick="showCreate()">إنشاء امتحان جديد</button>
+  <button onclick="listExams()">معاينة امتحاناتي</button>
+  <div id="create" style="display:none">
+    <h4>إنشاء امتحان</h4>
+    <label>المادة <input id="subject"></label>
+    <label>الصف <input id="class"></label>
+    <label>الشهر
+      <select id="month"><option>اول</option><option>ثاني</option><option>ثالث</option></select>
+    </label>
+    <div id="questions"></div>
+    <button onclick="addQuestion()">أضف سؤال</button>
+    <br><br>
+    <button onclick="createExam()">إنشاء الامتحان</button>
+  </div>
+
+  <div id="examsList"></div>
+</div>
+
+<script>
+let teacher = null;
+function login(){
+  const code = document.getElementById('code').value;
+  fetch('/api/teacher-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})})
+  .then(r=>r.json()).then(j=>{
+    if(j.error) { document.getElementById('loginMsg').innerText = j.error; return; }
+    teacher = j;
+    document.getElementById('login').style.display='none';
+    document.getElementById('panel').style.display='block';
+    document.getElementById('greet').innerText = 'مرحبا أستاذ '+j.name;
+  });
+}
+
+function showCreate(){
+  document.getElementById('create').style.display='block';
+  document.getElementById('examsList').innerHTML='';
+  if(!document.getElementById('q0')) addQuestion();
+}
+
+function addQuestion(){
+  const idx = document.querySelectorAll('.question').length;
+  const div = document.createElement('div'); div.className='question';
+  div.id = 'q'+idx;
+  div.innerHTML = `
+    <label>نص السؤال <input class="qtext"></label>
+    <label>العلامة <input class="qscore" type="number" value="1"></label>
+    <div class="choices"></div>
+    <button onclick="addChoice('${div.id}')">أضف خيار</button>
+    <hr>
+  `;
+  document.getElementById('questions').appendChild(div);
+  addChoice(div.id); addChoice(div.id);
+}
+
+function addChoice(qid){
+  const container = document.querySelector('#'+qid+' .choices');
+  const idx = container.children.length;
+  const div = document.createElement('div');
+  div.innerHTML = `<label><input type="radio" name="correct-${qid}" value="${idx}"> خيار <input class="ctext"></label>`;
+  container.appendChild(div);
+}
+
+function collectQuestions(){
+  const arr = [];
+  document.querySelectorAll('.question').forEach(q=>{
+    const text = q.querySelector('.qtext').value;
+    const score = parseInt(q.querySelector('.qscore').value)||1;
+    const choices = [];
+    q.querySelectorAll('.choices div').forEach((c,ci)=>{
+      const textc = c.querySelector('.ctext').value || '';
+      const iscorr = c.querySelector('input[type=radio]').checked;
+      choices.push({text: textc, is_correct: iscorr});
+    });
+    arr.push({text,score,choices});
+  });
+  return arr;
+}
+
+function createExam(){
+  const subject = document.getElementById('subject').value;
+  const cls = document.getElementById('class').value;
+  const month = document.getElementById('month').value;
+  const questions = collectQuestions();
+  fetch('/api/create-exam',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    teacher_id: teacher.teacher_id, subject, class: cls, month, questions
+  })}).then(r=>r.json()).then(j=>{
+    if(j.error) alert(j.error); else alert('تم الإنشاء ID='+j.exam_id);
+  });
+}
+
+function listExams(){
+  fetch('/api/teacher-exams/'+teacher.teacher_id).then(r=>r.json()).then(list=>{
+    const out = list.map(e=>`ID:${e.exam_id} المادة:${e.subject} الصف:${e.class} الشهر:${e.month} <button onclick="preview(${e.exam_id})">معاينة</button>`).join('<br>');
+    document.getElementById('examsList').innerHTML = out;
+  });
+}
+
+function preview(id){
+  fetch('/api/exam/'+id).then(r=>r.json()).then(data=>{
+    let html = `<h4>معاينة الامتحان ID:${id}</h4><p>المادة:${data.exam.subject} الصف:${data.exam.class} الشهر:${data.exam.month}</p>`;
+    data.questions.forEach((q,i)=>{
+      html += `<div><b>${i+1}. ${q.question_text} [${q.score}]</b><ul>`;
+      q.choices.forEach(c=> html += `<li>${c.choice_text} ${c.is_correct? '(صح)':''}</li>`);
+      html += `</ul></div>`;
+    });
+    document.getElementById('examsList').innerHTML = html;
+  });
+}
+</script>
+</body>
+</html>
